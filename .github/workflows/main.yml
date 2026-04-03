@@ -1,4 +1,4 @@
-name: Deploy Portfolio App
+name: Deploy Portfolio
 
 on:
   push:
@@ -10,19 +10,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 1. Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: 2. Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Sync project to server
+      - name: 3. Upload project files
         run: |
-          rsync -avz --delete \
+          rsync -az --delete \
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude '.env' \
@@ -30,12 +30,19 @@ jobs:
             -e "ssh -p ${{ secrets.SSH_PORT }}" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}
 
-      - name: Deploy on server
+      - name: 4. Build and restart on server
         run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
-
-            chmod +x scripts/deploy.sh
-            ./scripts/deploy.sh
+            docker compose up -d --build
           EOF
+
+      - name: 5. Wait for app
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "sleep 20"
+
+      - name: 6. Health check
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+          "curl -f http://localhost:5000/api/health"
