@@ -20,7 +20,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: 3. Upload project files
+      - name: 3. Upload project
         run: |
           rsync -az --delete \
             --exclude '.git' \
@@ -30,19 +30,37 @@ jobs:
             -e "ssh -p ${{ secrets.SSH_PORT }}" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}
 
-      - name: 4. Build and restart on server
+      - name: 4. Deploy app
         run: |
           ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
+
             docker compose up -d --build
+
+            echo "Waiting for containers..."
+            sleep 25
+
+            echo "Container status:"
+            docker compose ps
+
+            echo "Recent app logs:"
+            docker compose logs app --tail=50 || true
           EOF
 
-      - name: 5. Wait for app
+      - name: 5. Health check with retries
         run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "sleep 20"
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
+            for i in {1..10}; do
+              echo "Health check attempt \$i..."
+              if curl -f http://localhost:5000/api/health; then
+                echo "App is healthy"
+                exit 0
+              fi
+              sleep 5
+            done
 
-      - name: 6. Health check
-        run: |
-          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-          "curl -f http://localhost:5000/api/health"
+            echo "Health check failed"
+            docker compose -f ${{ secrets.DEPLOY_PATH }}/docker-compose.yml logs app --tail=100
+            exit 1
+          EOF
