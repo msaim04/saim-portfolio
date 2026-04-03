@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: deploy-production
@@ -24,7 +25,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: 3. Upload project files
+      - name: 3. Ensure deploy directory exists
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+          "mkdir -p ${{ secrets.DEPLOY_PATH }}/server"
+
+      - name: 4. Upload project files
         run: |
           rsync -az --delete \
             --exclude '.git' \
@@ -35,7 +41,16 @@ jobs:
             -e "ssh -p ${{ secrets.SSH_PORT }}" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}
 
-      - name: 4. Deploy containers
+      - name: 5. Check required env file exists
+        run: |
+          ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
+            if [ ! -f "${{ secrets.DEPLOY_PATH }}/server/.env" ]; then
+              echo "❌ Missing server/.env on server"
+              exit 1
+            fi
+          EOF
+
+      - name: 6. Deploy containers
         run: |
           ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
             set -e
@@ -53,7 +68,7 @@ jobs:
             docker compose logs app --tail=50 || true
           EOF
 
-      - name: 5. Health check with retries
+      - name: 7. Health check with retries
         run: |
           ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
             cd ${{ secrets.DEPLOY_PATH }}
