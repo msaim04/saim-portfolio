@@ -53,9 +53,29 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const connectWithRetry = async (retries = 10, delay = 3000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('Database connected');
+      return;
+    } catch (error) {
+      console.log(`Database not ready (attempt ${attempt}/${retries})`);
+      if (attempt === retries) {
+        throw error;
+      }
+      await wait(delay);
+    }
+  }
+};
+
 const start = async () => {
   try {
+    await connectWithRetry();
     await pool.query(schemaSql);
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
