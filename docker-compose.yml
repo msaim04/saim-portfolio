@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: saim_portfolio
       POSTGRES_USER: saim_app
       POSTGRES_PASSWORD: SaimDbPass2026
+    ports:
+    - "127.0.0.1:5432:5432"
     volumes:
     - pgdata:/var/lib/postgresql/data
     healthcheck:
